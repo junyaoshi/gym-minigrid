@@ -46,6 +46,7 @@ OBJECT_TO_IDX = {
     'goal'          : 8,
     'lava'          : 9,
     'agent'         : 10,
+    'movable_block'   : 11,
 }
 
 IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
@@ -141,8 +142,10 @@ class WorldObj:
             v = Goal()
         elif obj_type == 'lava':
             v = Lava()
+        elif obj_type == 'movable_block':
+            v = MovableBlock()
         else:
-            assert False, "unknown object type in decode '%s'" % objType
+            assert False, "unknown object type in decode '%s'" % obj_type
 
         return v
 
@@ -330,6 +333,24 @@ class Box(WorldObj):
         # Replace the box by its contents
         env.grid.set(*pos, self.contains)
         return True
+
+class MovableBlock(WorldObj):
+    def __init__(self, color, contains=False):
+        super(MovableBlock, self).__init__('movable_block', color)
+        self.contains = contains
+
+    def can_pickup(self):
+        return False
+
+    def render(self, img):
+        c = COLORS[self.color]
+
+        # Outline
+        fill_coords(img, point_in_rect(0.12, 0.88, 0.12, 0.88), c)
+        fill_coords(img, point_in_rect(0.18, 0.82, 0.18, 0.82), (0,0,0))
+
+        # Horizontal slit
+        fill_coords(img, point_in_rect(0.16, 0.84, 0.47, 0.53), c)
 
 class Grid:
     """
