@@ -24,7 +24,8 @@ class HLfDEnv(MiniGridEnv):
         self.obs_3_x = self.obs_2_x + np.random.randint(self._obstacle_min_gap, self._obstacle_max_gap + 1)
 
         self.obs_x_indices = [self.obs_1_x, self.obs_2_x, self.obs_3_x]
-        self.obs_generation_funcs = [self._generate_obs_avoid, self._generate_obs_door, self._generate_obs_ball]
+        self.obs_generation_funcs = [self._generate_obs_avoid, self._generate_obs_move_away,
+                                     self._generate_obs_move_into]
         assert len(self.obs_x_indices) == len(self.obs_generation_funcs)
 
         self.width = self.obs_3_x + np.random.randint(self._obstacle_min_gap, self._obstacle_max_gap + 1)
@@ -32,6 +33,13 @@ class HLfDEnv(MiniGridEnv):
         self.max_steps = np.inf
 
         super().__init__(height=self.height, width=self.width, max_steps=self.max_steps)
+
+    @property
+    def front_front_pos(self):
+        """
+        Get the position of the cell that is in front of the cell in front of the agent
+        """
+        return self.agent_pos + self.dir_vec * 2
 
     def _gen_grid(self, width, height):
         # Create the grid
@@ -78,6 +86,10 @@ class HLfDEnv(MiniGridEnv):
         ballColor = self._rand_elem(sorted(self.colors))
         return Ball(ballColor)
 
+    def _generate_movable_block(self):
+        blockColor = self._rand_elem(sorted(self.colors))
+        return MovableBlock(blockColor)
+
     def _generate_obs_avoid(self, x):
         self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
         holePos = (x, self._rand_int(1, self.height - 1))
@@ -88,6 +100,22 @@ class HLfDEnv(MiniGridEnv):
         entryDoor = self._generate_door()
         doorPos = (x, self._rand_int(1, self.height - 1))
         self.grid.set(*doorPos, entryDoor)
+
+    def _generate_obs_move_away(self, x):
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        y = self._rand_int(2, self.height - 2)
+        holePos = (x, y)
+        block = self._generate_movable_block()
+        blockPos = (x - 1, y)
+        self.grid.set(*holePos, None)
+        self.grid.set(*blockPos, block)
+
+    def _generate_obs_move_into(self, x):
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        y = self._rand_int(1, self.height - 1)
+        block = self._generate_movable_block()
+        blockPos = (x - 1, y)
+        self.grid.set(*blockPos, block)
 
     def _generate_obs_ball(self, x):
         self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
@@ -128,8 +156,86 @@ class HLfDEnv(MiniGridEnv):
         return obs
 
     def step(self, action):
-        obs, reward, done, info = MiniGridEnv.step(self, action)
-        return obs, reward, done, info
+        self.step_count += 1
+
+        reward = 0
+        done = False
+
+        # Get the position in front of the agent
+        fwd_pos = self.front_pos
+
+        # Get the contents of the cell in front of the agent
+        fwd_cell = self.grid.get(*fwd_pos)
+
+        # Rotate left
+        if action == self.actions.left:
+            self.agent_dir -= 1
+            if self.agent_dir < 0:
+                self.agent_dir += 4
+
+        # Rotate right
+        elif action == self.actions.right:
+            self.agent_dir = (self.agent_dir + 1) % 4
+
+        # Move forward
+        elif action == self.actions.forward:
+            if fwd_cell is None or fwd_cell.can_overlap():
+                self.agent_pos = fwd_pos
+            if fwd_cell is not None and fwd_cell.type == 'movable_block':
+
+                # Get the position in front front of the agent
+                fwd_fwd_pos = self.front_front_pos
+
+                # Get the contents of the cell in front front of the agent
+                fwd_fwd_cell = self.grid.get(*fwd_fwd_pos)
+
+                if fwd_fwd_cell is None:
+                    self.grid.set(*fwd_pos, None)
+                    self.grid.set(*fwd_fwd_pos, fwd_cell)
+                    self.agent_pos = fwd_pos
+                elif fwd_fwd_cell.type == 'lava':
+                    self.grid.set(*fwd_pos, None)
+                    self.grid.set(*fwd_fwd_pos, None)
+                    self.agent_pos = fwd_pos
+            if fwd_cell is not None and fwd_cell.type == 'goal':
+                done = True
+                reward = self._reward()
+            if fwd_cell is not None and fwd_cell.type == 'lava':
+                done = True
+
+        # Pick up an object
+        elif action == self.actions.pickup:
+            if fwd_cell and fwd_cell.can_pickup():
+                if self.carrying is None:
+                    self.carrying = fwd_cell
+                    self.carrying.cur_pos = np.array([-1, -1])
+                    self.grid.set(*fwd_pos, None)
+
+        # Drop an object
+        elif action == self.actions.drop:
+            if not fwd_cell and self.carrying:
+                self.grid.set(*fwd_pos, self.carrying)
+                self.carrying.cur_pos = fwd_pos
+                self.carrying = None
+
+        # Toggle/activate an object
+        elif action == self.actions.toggle:
+            if fwd_cell:
+                fwd_cell.toggle(self, fwd_pos)
+
+        # Done action (not used by default)
+        elif action == self.actions.done:
+            pass
+
+        else:
+            assert False, "unknown action"
+
+        if self.step_count >= self.max_steps:
+            done = True
+
+        obs = self.gen_obs()
+
+        return obs, reward, done, {}
 
     def reset(self):
         # Specify x indices of three obstacles
