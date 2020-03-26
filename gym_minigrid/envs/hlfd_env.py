@@ -8,10 +8,12 @@ class HLfDEnv(MiniGridEnv):
     Can specify agent and goal position, if not it set at random.
     """
 
-    def __init__(self, agent_pos=None, goal_pos=None, obstacle_type=Lava):
+    def __init__(self, agent_pos=None, goal_pos=None, agent_view_size=3, obstacle_type=Lava, obstacle_see_behind=False):
         self._agent_default_pos = agent_pos
         self._goal_default_pos = goal_pos
+        self.agent_view_size = agent_view_size
         self.obstacle_type = obstacle_type
+        self.obstacle_see_behind = obstacle_see_behind
         self.colors = set(COLOR_NAMES)
 
         # max and min dsitance between two obstacles
@@ -91,18 +93,21 @@ class HLfDEnv(MiniGridEnv):
         return MovableBlock(blockColor)
 
     def _generate_obs_avoid(self, x):
-        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type,
+                            see_behind=self.obstacle_see_behind)
         holePos = (x, self._rand_int(1, self.height - 1))
         self.grid.set(*holePos, None)
 
     def _generate_obs_door(self, x):
-        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type,
+                            see_behind=self.obstacle_see_behind)
         entryDoor = self._generate_door()
         doorPos = (x, self._rand_int(1, self.height - 1))
         self.grid.set(*doorPos, entryDoor)
 
     def _generate_obs_move_away(self, x):
-        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type,
+                            see_behind=self.obstacle_see_behind)
         y = self._rand_int(2, self.height - 2)
         holePos = (x, y)
         block = self._generate_movable_block()
@@ -111,14 +116,16 @@ class HLfDEnv(MiniGridEnv):
         self.grid.set(*blockPos, block)
 
     def _generate_obs_move_into(self, x):
-        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type,
+                            see_behind=self.obstacle_see_behind)
         y = self._rand_int(1, self.height - 1)
         block = self._generate_movable_block()
         blockPos = (x - 1, y)
         self.grid.set(*blockPos, block)
 
     def _generate_obs_ball(self, x):
-        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type)
+        self.grid.vert_wall(x=x, y=1, length=self.height - 2, obj_type=self.obstacle_type,
+                            see_behind=self.obstacle_see_behind)
         y = self._rand_int(1, self.height - 1)
         holePos = (x, y)
         ball = self._generate_ball()
@@ -134,6 +141,7 @@ class HLfDEnv(MiniGridEnv):
         Generate the agent's view (partially observable, low-resolution encoding)
         """
 
+        self.agent_view_size = 5
         grid, vis_mask = self.gen_obs_grid()
 
         # Encode the partially observable view into a numpy array
