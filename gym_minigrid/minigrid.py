@@ -75,12 +75,13 @@ class WorldObj:
     Base class for grid world objects
     """
 
-    def __init__(self, type, color):
+    def __init__(self, type, color, can_see_behind=False):
         assert type in OBJECT_TO_IDX, type
         assert color in COLOR_TO_IDX, color
         self.type = type
         self.color = color
         self.contains = None
+        self.can_see_behind = can_see_behind
 
         # Initial position of the object
         self.init_pos = None
@@ -102,7 +103,7 @@ class WorldObj:
 
     def see_behind(self):
         """Can the agent see behind this object?"""
-        return True
+        return self.can_see_behind
 
     def toggle(self, env, pos):
         """Method to trigger/toggle an action this object performs"""
@@ -187,8 +188,8 @@ class Floor(WorldObj):
         ])
 
 class Lava(WorldObj):
-    def __init__(self):
-        super().__init__('lava', 'red')
+    def __init__(self, can_see_behind):
+        super().__init__('lava', 'red', can_see_behind=can_see_behind)
 
     def can_overlap(self):
         return True
@@ -412,11 +413,14 @@ class Grid:
         for i in range(0, length):
             self.set(x + i, y, obj_type())
 
-    def vert_wall(self, x, y, length=None, obj_type=Wall):
+    def vert_wall(self, x, y, length=None, obj_type=Wall, see_behind=None):
         if length is None:
             length = self.height - y
         for j in range(0, length):
-            self.set(x, y + j, obj_type())
+            if see_behind is None:
+                self.set(x, y + j, obj_type())
+            else:
+                self.set(x, y + j, obj_type(can_see_behind=see_behind))
 
     def wall_rect(self, x, y, w, h):
         self.horz_wall(x, y, w)
